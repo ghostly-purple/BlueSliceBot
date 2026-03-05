@@ -1,69 +1,44 @@
-import matplotlib.pyplot as plt
+import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from datetime import datetime, time, timedelta
-import os
+import matplotlib.pyplot as plt
+from io import BytesIO
+from datetime import datetime, time
 
-# Bot token (set in Render as environment variable)
-TOKEN = os.environ.get("TOKEN")  
+# Read Telegram bot token from environment
+TOKEN = os.environ.get("TOKEN")
+if not TOKEN:
+    raise ValueError("No TOKEN found in environment variables.")
 
-# Goal and earnings
-GOAL = 3500
-START_AMOUNT = 618.75  # Updated: mini job + 4 full-time days
-HOURLY_RATE = 9.375
+# ---- CONFIG ----
+HOURLY_RATE = 1500 / 40  # full-time monthly net / weekly hours (adjust if needed)
+MINI_EARNED = 300  # already earned from minijob
+FULL_DAYS_WORKED = 4  # full-time days worked
+GOAL_TOTAL = 500 + 1000 + 1000 + 1000  # mom + Barcelona + snowboarding + safety net
 
-# Work shift
-SHIFT_START = time(7, 0)
-SHIFT_END = time(15, 30)
+# Calculate current earned
+FULL_DAY_HOURS = 8  # your workday hours
+FULL_TIME_EARNED = HOURLY_RATE * FULL_DAY_HOURS * FULL_DAYS_WORKED
+CURRENT_EARNED = MINI_EARNED + FULL_TIME_EARNED
 
-# Start date for full-time job counting
-START_DATE = datetime(2026, 3, 2)
-
-def calculate_earned():
-    now = datetime.now()
-    earned = START_AMOUNT
-
-    # Count all weekdays since START_DATE
-    total_days = (now.date() - START_DATE.date()).days + 1
-    for i in range(total_days):
-        day = START_DATE + timedelta(days=i)
-        if day.weekday() < 5:  # Monday=0 … Friday=4
-            # Past days: full day
-            if day.date() < now.date():
-                earned += HOURLY_RATE * 8.5
-            # Today: partial based on current time
-            elif day.date() == now.date():
-                if now.time() >= SHIFT_END:
-                    earned += HOURLY_RATE * 8.5
-                elif now.time() > SHIFT_START:
-                    hours_today = (datetime.combine(now.date(), now.time()) - datetime.combine(now.date(), SHIFT_START)).total_seconds() / 3600
-                    earned += hours_today * HOURLY_RATE
-
-    return min(earned, GOAL)
-
-def generate_pie_chart(earned):
-    remaining = GOAL - earned
-    plt.figure()
-    plt.pie(
-        [earned, remaining],
-        labels=["Earned", "Remaining"],
-        colors=["blue", "white"],
-        autopct='%1.1f%%',
-        startangle=90
-    )
-    plt.title(f"€{earned:.2f} / €{GOAL}")
-    plt.savefig("progress.png")
-    plt.close()
-
+# ---- BOT HANDLER ----
 async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    earned = calculate_earned()
-    generate_pie_chart(earned)
-    await update.message.reply_photo(
-        photo=open("progress.png", "rb"),
-        caption=f"€{earned:.2f} of €{GOAL}"
-    )
+    # Generate pie chart
+    earned = CURRENT_EARNED
+    remaining = max(GOAL_TOTAL - earned, 0)
+    fig, ax = plt.subplots()
+    ax.pie([earned, remaining], labels=["Earned", "Remaining"], colors=["blue", "white"], startangle=90, autopct='%1.0f%%')
+    ax.set_title("BlueSliceBot Progress")
+    # Save to in-memory buffer
+    buf = BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+    plt.close(fig)
+    await update.message.reply_photo(photo=buf)
 
+# ---- MAIN ----
 app = ApplicationBuilder().token(TOKEN).build()
 app.add_handler(CommandHandler("progress", progress))
 
+print("Polling started...")
 app.run_polling()
