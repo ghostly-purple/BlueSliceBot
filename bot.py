@@ -1,39 +1,45 @@
 import os
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import matplotlib
+matplotlib.use('Agg')  # Important for headless servers like Render
 import matplotlib.pyplot as plt
 from io import BytesIO
 from datetime import datetime, time
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Read Telegram bot token from environment
+# ---- TOKEN ----
 TOKEN = os.environ.get("TOKEN")
 if not TOKEN:
     raise ValueError("No TOKEN found in environment variables.")
 
 # ---- CONFIG ----
-HOURLY_RATE = 1500 / 40  # full-time monthly net / weekly hours (adjust if needed)
+HOURLY_RATE = 1500 / 40  # full-time monthly net / 40h per week
 MINI_EARNED = 300  # already earned from minijob
 FULL_DAYS_WORKED = 4  # full-time days worked
 GOAL_TOTAL = 500 + 1000 + 1000 + 1000  # mom + Barcelona + snowboarding + safety net
+FULL_DAY_HOURS = 8  # your daily work hours
 
-# Calculate current earned
-FULL_DAY_HOURS = 8  # your workday hours
-FULL_TIME_EARNED = HOURLY_RATE * FULL_DAY_HOURS * FULL_DAYS_WORKED
-CURRENT_EARNED = MINI_EARNED + FULL_TIME_EARNED
+# ---- HELPER FUNCTION ----
+def calculate_current_earned():
+    full_time_earned = HOURLY_RATE * FULL_DAY_HOURS * FULL_DAYS_WORKED
+    current_earned = MINI_EARNED + full_time_earned
+    return current_earned
 
-# ---- BOT HANDLER ----
-async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Generate pie chart
-    earned = CURRENT_EARNED
-    remaining = max(GOAL_TOTAL - earned, 0)
+def generate_pie_chart(earned, remaining):
     fig, ax = plt.subplots()
     ax.pie([earned, remaining], labels=["Earned", "Remaining"], colors=["blue", "white"], startangle=90, autopct='%1.0f%%')
     ax.set_title("BlueSliceBot Progress")
-    # Save to in-memory buffer
     buf = BytesIO()
     plt.savefig(buf, format="png")
     buf.seek(0)
     plt.close(fig)
+    return buf
+
+# ---- BOT HANDLER ----
+async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    earned = calculate_current_earned()
+    remaining = max(GOAL_TOTAL - earned, 0)
+    buf = generate_pie_chart(earned, remaining)
     await update.message.reply_photo(photo=buf)
 
 # ---- MAIN ----
